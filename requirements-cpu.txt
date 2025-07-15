@@ -1,0 +1,8 @@
+# ML dependencies for CPU-only installation.
+# torch should be installed separately before this file,
+# using the CPU-specific index URL.
+sentence-transformers
+langchain
+llama-index-core
+tree-sitter-language-pack
+scikit-learn 

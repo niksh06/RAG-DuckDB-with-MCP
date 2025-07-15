@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RAG Server</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+            integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .container {
+            max-width: 800px;
+        }
+        .card {
+            margin-bottom: 1.5rem;
+        }
+        .result-box {
+            background-color: #e9ecef;
+            border: 1px solid #ced4da;
+            border-radius: .25rem;
+            padding: 1rem;
+            max-height: 500px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+<div class="container mt-5">
+    <h1 class="mb-4 text-center">Document Processing Server</h1>
+    
+    <!-- Messages -->
+    {% if message %}
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    {% endif %}
+    
+    {% if error %}
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            {{ error }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    {% endif %}
+
+    <!-- File Upload Card -->
+    <div class="card">
+        <div class="card-header">
+            Step 1: Upload Content
+        </div>
+        <div class="card-body">
+            <h5 class="card-title">Upload Documents</h5>
+            <p class="card-text">Select one or more files (.txt, .md, .pdf, .py, .js, .java, .c, .cpp, .json, .yaml, .yml, .ini, .toml) to upload for processing.</p>
+            <form action="/upload-files/" method="post" enctype="multipart/form-data" onsubmit="showLoading('upload-files-spinner', this)">
+                <div class="mb-3">
+                    <input class="form-control" type="file" name="files" multiple
+                           accept=".txt,.md,.pdf,.py,.js,.java,.c,.cpp,.json,.yaml,.yml,.ini,.toml">
+                </div>
+                <button type="submit" class="btn btn-primary">Upload Files</button>
+                <div class="spinner-border text-primary ms-2 d-none" role="status" id="upload-files-spinner" style="vertical-align: middle;">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </form>
+
+            <hr class="my-4">
+
+            <h5 class="card-title">Upload Directory</h5>
+            <p class="card-text">Select a directory to upload all relevant files within it. Sub-directory structure will be flattened.</p>
+            <form action="/upload-directory/" method="post" enctype="multipart/form-data" onsubmit="showLoading('upload-dir-spinner', this)">
+                <div class="form-group">
+                    <label for="files" class="form-label">Select Directory:</label>
+                    <input type="file" id="files" name="files" class="form-control" webkitdirectory multiple required>
+                </div>
+                
+                <!-- File extension filter section -->
+                <div class="form-group">
+                    <label class="form-label">File Extension Filter:</label>
+                    <div class="row">
+                        <div class="col-12 mb-2">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="checkbox" id="select_all_extensions" onchange="toggleAllExtensions()">
+                                <label class="form-check-label fw-bold" for="select_all_extensions">
+                                    Select All
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <!-- Text Documents -->
+                        <div class="col-md-3">
+                            <h6 class="text-muted mb-2">Documents</h6>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_txt" value="txt">
+                                <label class="form-check-label" for="ext_txt">.txt</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_md" value="md">
+                                <label class="form-check-label" for="ext_md">.md</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_pdf" value="pdf">
+                                <label class="form-check-label" for="ext_pdf">.pdf</label>
+                            </div>
+                        </div>
+                        
+                        <!-- Code -->
+                        <div class="col-md-3">
+                            <h6 class="text-muted mb-2">Code</h6>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_py" value="py">
+                                <label class="form-check-label" for="ext_py">.py</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_js" value="js">
+                                <label class="form-check-label" for="ext_js">.js</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_ts" value="ts">
+                                <label class="form-check-label" for="ext_ts">.ts</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_html" value="html">
+                                <label class="form-check-label" for="ext_html">.html</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_css" value="css">
+                                <label class="form-check-label" for="ext_css">.css</label>
+                            </div>
+                        </div>
+                        
+                        <!-- Other Languages -->
+                        <div class="col-md-3">
+                            <h6 class="text-muted mb-2">Other Languages</h6>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_java" value="java">
+                                <label class="form-check-label" for="ext_java">.java</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_cpp" value="cpp">
+                                <label class="form-check-label" for="ext_cpp">.cpp</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_c" value="c">
+                                <label class="form-check-label" for="ext_c">.c</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_rs" value="rs">
+                                <label class="form-check-label" for="ext_rs">.rs</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_go" value="go">
+                                <label class="form-check-label" for="ext_go">.go</label>
+                            </div>
+                        </div>
+                        
+                        <!-- Configuration -->
+                        <div class="col-md-3">
+                            <h6 class="text-muted mb-2">Configuration</h6>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_json" value="json">
+                                <label class="form-check-label" for="ext_json">.json</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_xml" value="xml">
+                                <label class="form-check-label" for="ext_xml">.xml</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_yaml" value="yaml">
+                                <label class="form-check-label" for="ext_yaml">.yaml</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input extension-checkbox" type="checkbox" id="ext_yml" value="yml">
+                                <label class="form-check-label" for="ext_yml">.yml</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Custom Extensions -->
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <label for="custom_extensions" class="form-label">Additional Extensions (comma-separated):</label>
+                            <input type="text" id="custom_extensions" name="custom_extensions" class="form-control" 
+                                   placeholder="php, rb, swift, kt">
+                            <div class="form-text">Enter additional file extensions without dots, separated by commas</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Upload Directory</button>
+                <div class="spinner-border text-primary ms-2 d-none" role="status" id="upload-dir-spinner" style="vertical-align: middle;">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Processing Card -->
+    <div class="card">
+        <div class="card-header">
+            Step 2: Process Files
+        </div>
+        <div class="card-body">
+            <h5 class="card-title">Uploaded Files</h5>
+            {% if uploaded_files %}
+                <ul class="list-group mb-3">
+                    {% for file in uploaded_files %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>{{ file }}</span>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteFile('{{ file }}')">
+                                <i class="fas fa-trash"></i> Удалить
+                            </button>
+                        </li>
+                    {% endfor %}
+                </ul>
+                <form action="/process-files/" method="post" id="process-form" onsubmit="showLoading('process-spinner', this)">
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" role="switch" id="use_tfidf" name="use_tfidf" value="True" checked>
+                        <label class="form-check-label" for="use_tfidf">Generate TF-IDF Keywords for better keyword search</label>
+                    </div>
+                    <button type="submit" class="btn btn-success">Start Processing</button>
+                    <div class="spinner-border text-success ms-2 d-none" role="status" id="process-spinner" style="vertical-align: middle;">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </form>
+            {% else %}
+                <p class="text-muted">No files uploaded yet. Please upload files in Step 1.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Search Card -->
+    <div class="card">
+        <div class="card-header">
+            Step 3: Search Documents
+        </div>
+        <div class="card-body">
+            <h5 class="card-title">Semantic Search</h5>
+            {% if total_chunks and total_chunks > 0 %}
+                <p class="card-text">Search through {{ total_chunks }} indexed document chunks.</p>
+                <form action="/search/" method="post" onsubmit="showLoading('search-spinner-container', this)">
+                    <div class="mb-3">
+                        <input class="form-control" type="text" name="query" placeholder="Enter your search query..." required
+                               value="{{ query if query }}">
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="search_type" class="form-label small">Search Type</label>
+                            <select class="form-select form-select-sm" id="search_type" name="search_type">
+                                <option value="hybrid" {% if search_type == 'hybrid' or not search_type %}selected{% endif %}>Hybrid (Recommended)</option>
+                                <option value="semantic" {% if search_type == 'semantic' %}selected{% endif %}>Semantic</option>
+                                <option value="keyword" {% if search_type == 'keyword' %}selected{% endif %}>Keyword (BM25)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8 d-flex align-items-end">
+                            <div class="form-check form-switch me-4">
+                                <input class="form-check-input" type="checkbox" role="switch" id="use_reranker" name="use_reranker" value="True" {% if use_reranker is not defined or use_reranker %}checked{% endif %}>
+                                <label class="form-check-label" for="use_reranker">Rerank Results</label>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" role="switch" id="expand_query" name="expand_query" value="True" {% if expand_query %}checked{% endif %}>
+                                <label class="form-check-label" for="expand_query">Expand Query</label>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-info text-white w-100">Search</button>
+                </form>
+                <div id="search-spinner-container" class="text-center mt-2 d-none">
+                    <div class="spinner-border text-info" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            {% else %}
+                <p class="text-muted">No documents have been processed yet. Please upload and process files first.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Search Results Card -->
+    {% if search_results is not none %}
+    <div class="card">
+        <div class="card-header">
+            Search Results for: <span class="fw-bold">"{{ query }}"</span>
+        </div>
+        <div class="card-body">
+            {% if search_results %}
+                <ul class="list-group list-group-flush">
+                    {% for result in search_results %}
+                        <li class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">{{ result.file_name }}</h6>
+                                <small class="text-muted text-capitalize">{{ (result.score_type or 'score').replace('_', ' ') }}: {{ result.score }}</small>
+                            </div>
+                            {% if result.metadata and result.metadata.type %}
+                                <div class="mb-1">
+                                    <span class="badge bg-secondary">{{ result.metadata.type }}</span>
+                                    {% if result.metadata.keywords %}
+                                        <span class="badge bg-light text-dark">Keywords: {{ result.metadata.keywords | join(', ') }}</span>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
+                            <p class="mb-1 text-muted" style="font-size: 0.9rem; white-space: pre-wrap;">{{ result.content | truncate(350) }}</p>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="text-muted">No results found for your query.</p>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Results Card -->
+    {% if processed_chunks is not none %}
+    <div class="card">
+        <div class="card-header">
+            Results
+        </div>
+        <div class="card-body">
+            <h5 class="card-title">Processed Chunks (JSON)</h5>
+            <p class="card-text">The following chunks have been processed and saved to DuckDB.</p>
+            <pre class="result-box"><code>{{ processed_chunks }}</code></pre>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+<script>
+    function showLoading(spinnerId, form) {
+        const spinner = document.getElementById(spinnerId);
+        if (spinner) {
+            spinner.classList.remove('d-none');
+        }
+        if (form) {
+            const button = form.querySelector('button[type="submit"]');
+            if (button) {
+                button.disabled = true;
+            }
+        }
+    }
+    
+    function deleteFile(filename) {
+        if (confirm(`Вы уверены, что хотите удалить файл "${filename}"?`)) {
+            // Создаем форму для отправки POST запроса
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/delete-file/';
+            
+            const filenameInput = document.createElement('input');
+            filenameInput.type = 'hidden';
+            filenameInput.name = 'filename';
+            filenameInput.value = filename;
+            
+            form.appendChild(filenameInput);
+            document.body.appendChild(form);
+            form.submit();
+        }
+    }
+
+    // JavaScript для управления чекбоксами расширений
+    function toggleAllExtensions() {
+        const selectAllCheckbox = document.getElementById('select_all_extensions');
+        const extensionCheckboxes = document.querySelectorAll('.extension-checkbox');
+        
+        extensionCheckboxes.forEach(function(checkbox) {
+            checkbox.checked = selectAllCheckbox.checked;
+        });
+    }
+    
+    function updateSelectAllState() {
+        const selectAllCheckbox = document.getElementById('select_all_extensions');
+        const extensionCheckboxes = document.querySelectorAll('.extension-checkbox');
+        const checkedCount = document.querySelectorAll('.extension-checkbox:checked').length;
+        
+        if (checkedCount === 0) {
+            selectAllCheckbox.indeterminate = false;
+            selectAllCheckbox.checked = false;
+        } else if (checkedCount === extensionCheckboxes.length) {
+            selectAllCheckbox.indeterminate = false;
+            selectAllCheckbox.checked = true;
+        } else {
+            selectAllCheckbox.indeterminate = true;
+            selectAllCheckbox.checked = false;
+        }
+    }
+    
+    function getSelectedExtensions() {
+        const checkedBoxes = document.querySelectorAll('.extension-checkbox:checked');
+        const customExtensions = document.getElementById('custom_extensions').value;
+        
+        let extensions = Array.from(checkedBoxes).map(cb => cb.value);
+        
+        if (customExtensions) {
+            const customExts = customExtensions.split(',').map(ext => ext.trim().toLowerCase()).filter(ext => ext);
+            extensions = extensions.concat(customExts);
+        }
+        
+        return extensions;
+    }
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        const extensionCheckboxes = document.querySelectorAll('.extension-checkbox');
+        
+        // Добавляем обработчик для каждого чекбокса
+        extensionCheckboxes.forEach(function(checkbox) {
+            checkbox.addEventListener('change', updateSelectAllState);
+        });
+        
+        // Инициализируем состояние
+        updateSelectAllState();
+        
+        // Обработчик для формы директории
+        const directoryForm = document.querySelector('form[action="/upload-directory/"]');
+        if (directoryForm) {
+            directoryForm.addEventListener('submit', function(e) {
+                const selectedExtensions = getSelectedExtensions();
+                
+                // Создаем скрытое поле с выбранными расширениями
+                const extensionsInput = document.createElement('input');
+                extensionsInput.type = 'hidden';
+                extensionsInput.name = 'selected_extensions';
+                extensionsInput.value = JSON.stringify(selectedExtensions);
+                this.appendChild(extensionsInput);
+            });
+        }
+    });
+</script>
+</body>
+</html> 

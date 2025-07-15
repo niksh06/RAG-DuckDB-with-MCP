@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+python-multipart
+jinja2
+duckdb>=0.9.2
+pypdf 

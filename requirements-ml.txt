@@ -1,0 +1,4 @@
+# Full ML dependencies (for GPU)
+# This file is for installing packages that have different distributions
+# for CPU vs GPU (e.g. torch with CUDA support).
+# Note: GraphRAG is planned for future implementation 

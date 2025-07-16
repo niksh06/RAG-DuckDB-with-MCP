@@ -319,6 +319,49 @@ async def api_search(
     except Exception as e:
         return {"error": str(e), "results": []}
 
+@app.post("/api/upload")
+async def api_upload(file: UploadFile = File(...)):
+    """
+    JSON API to upload and immediately process a single file.
+    This is an atomic operation.
+    """
+    if not file.filename:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=400, content={"error": "Filename is missing."})
+
+    # Use a temporary file to leverage existing service logic
+    sanitized_filename = os.path.basename(file.filename)
+    # Add a unique prefix to avoid collisions during async execution
+    temp_file_path = os.path.join(services.UPLOADS_DIR, f"temp_api_{sanitized_filename}")
+
+    try:
+        content = await file.read()
+        if not content:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=400, content={"error": "File is empty."})
+
+        with open(temp_file_path, "wb") as buffer:
+            buffer.write(content)
+
+        # Process the single file. TF-IDF is not very useful for a single file.
+        processed_chunks = services.process_single_file(temp_file_path, use_tfidf_keywords=False)
+        
+        return {
+            "status": "success",
+            "message": f"File '{sanitized_filename}' processed successfully.",
+            "filename": sanitized_filename,
+            "total_chunks_added": len(processed_chunks),
+            "processed_chunks_preview": processed_chunks[:3] # Preview of first 3 chunks
+        }
+    except Exception as e:
+        logger.error(f"Error processing file via API '{file.filename}': {e}", exc_info=True)
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=500, content={"error": str(e)})
+    finally:
+        # Ensure the temporary file is deleted
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
 @app.post("/delete-file/", response_class=HTMLResponse)
 async def delete_file(request: Request, filename: str = Form(...)):
     """Удаляет загруженный файл."""

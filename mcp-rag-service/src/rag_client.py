@@ -25,71 +25,63 @@ class RAGClient:
     
     async def upload_file(self, file_path: str, rag_server_url: str) -> Dict[str, Any]:
         """
-        Загрузить файл в RAG сервер
+        Загружает и немедленно обрабатывает файл в RAG сервере, используя
+        атомарный эндпоинт. Отправляет содержимое файла через HTTP POST.
         
         Args:
-            file_path: Путь к файлу
-            rag_server_url: URL RAG сервера
+            file_path: Путь к файлу на локальном хосте.
+            rag_server_url: URL RAG сервера.
             
         Returns:
-            Результат загрузки
+            Результат обработки от сервера в формате JSON.
         """
-        file_path = Path(file_path)
+        file_path_obj = Path(file_path)
         
-        if not file_path.exists():
+        if not file_path_obj.exists():
             raise FileNotFoundError(f"Файл не найден: {file_path}")
         
-        if not file_path.is_file():
+        if not file_path_obj.is_file():
             raise ValueError(f"Указанный путь не является файлом: {file_path}")
         
-        # Проверяем расширение файла
+        # Проверка расширения файла на стороне клиента
         allowed_extensions = {
             ".txt", ".md", ".pdf", ".py", ".js", ".java", 
             ".c", ".cpp", ".json", ".yaml", ".yml", ".ini", ".toml"
         }
         
-        if file_path.suffix.lower() not in allowed_extensions:
-            raise ValueError(f"Неподдерживаемый тип файла: {file_path.suffix}")
+        if file_path_obj.suffix.lower() not in allowed_extensions:
+            raise ValueError(f"Неподдерживаемый тип файла: {file_path_obj.suffix}")
         
         session = await self._get_session()
         
         try:
-            # Загружаем файл
-            with open(file_path, 'rb') as f:
+            with open(file_path_obj, 'rb') as f:
                 data = aiohttp.FormData()
-                data.add_field('files', f, filename=file_path.name)
+                # Сервер ожидает поле 'file'
+                data.add_field('file', f, filename=file_path_obj.name, content_type='application/octet-stream')
                 
-                upload_url = f"{rag_server_url.rstrip('/')}/upload-files/"
+                # Используем новый атомарный эндпоинт
+                upload_url = f"{rag_server_url.rstrip('/')}/api/upload"
                 
                 async with session.post(upload_url, data=data) as response:
                     if response.status != 200:
-                        raise Exception(f"Ошибка загрузки файла: HTTP {response.status}")
+                        error_text = await response.text()
+                        raise Exception(f"Ошибка загрузки и обработки файла: HTTP {response.status}, {error_text}")
                     
-                    logger.info(f"Файл {file_path.name} успешно загружен")
-            
-            # Обрабатываем файл
-            process_url = f"{rag_server_url.rstrip('/')}/process-files/"
-            
-            async with session.post(process_url) as response:
-                if response.status != 200:
-                    raise Exception(f"Ошибка обработки файла: HTTP {response.status}")
-                
-                logger.info(f"Файл {file_path.name} успешно обработан")
-            
-            return {
-                "status": "success",
-                "message": f"Файл {file_path.name} загружен и обработан",
-                "file_name": file_path.name,
-                "file_size": file_path.stat().st_size
-            }
+                    result = await response.json()
+                    if result.get("status") != "success":
+                        raise Exception(f"Ошибка на сервере: {result.get('error', 'Unknown error')}")
+
+                    logger.info(f"Файл {file_path_obj.name} успешно загружен и обработан.")
+                    
+                    # Добавляем информацию о файле в результат для полноты
+                    result['source_file_name'] = file_path_obj.name
+                    result['source_file_size'] = file_path_obj.stat().st_size
+                    return result
             
         except Exception as e:
             logger.error(f"Ошибка при работе с файлом {file_path}: {e}")
-            return {
-                "status": "error",
-                "message": str(e),
-                "file_name": file_path.name
-            }
+            raise # Передаем исключение выше для обработки в MCP сервере
     
     async def search(
         self, 

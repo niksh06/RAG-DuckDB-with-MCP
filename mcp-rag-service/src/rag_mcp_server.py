@@ -272,52 +272,27 @@ class RAGMCPServer:
         if not file_path:
             raise ValueError("Путь к файлу не может быть пустым")
         
-        # Проверяем и нормализуем путь
-        original_path = file_path
-        if not file_path.startswith("/"):
-            # Относительный путь - предполагаем что файл в рабочей директории
-            # Если путь уже начинается с 'data/', не добавляем лишний /data/
-            if file_path.startswith("data/"):
-                file_path = f"/{file_path}"
-            else:
-                file_path = f"/data/{file_path}"
+        # Валидация пути остается важной
+        if not validate_file_path(file_path):
+            raise ValueError(f"Недействительный или небезопасный путь к файлу: {file_path}")
         
-        if not validate_file_path(original_path):
-            raise ValueError(f"Недействительный путь к файлу: {original_path}")
-        
-        actual_file_path = file_path  # Запоминаем реальный путь для удаления
         try:
+            # Путь может быть относительным, Path() справится с этим.
+            # Логика нормализации пути в /data/ слишком привязана к Docker.
+            # Будем считать, что путь доступен как есть (через volume mount).
             result = await self.rag_client.upload_file(file_path, rag_server_url)
             
-            # Если файл не найден по первому пути, попробуем оригинальный
-            if result.get("status") == "error" and "не найден" in result.get("message", ""):
-                logger.info(f"Файл не найден по пути {file_path}, пробуем оригинальный путь: {original_path}")
-                result = await self.rag_client.upload_file(original_path, rag_server_url)
-                actual_file_path = original_path  # Обновляем путь для удаления
-            
-            # Если загрузка успешна, удаляем файл
-            if result.get("status") == "success":
-                try:
-                    if os.path.exists(actual_file_path):
-                        os.remove(actual_file_path)
-                        logger.info(f"Файл успешно удалён после загрузки: {actual_file_path}")
-                        result["file_deleted"] = True
-                        result["deleted_path"] = actual_file_path
-                    else:
-                        logger.warning(f"Файл не найден для удаления: {actual_file_path}")
-                        result["file_deleted"] = False
-                        result["delete_warning"] = f"Файл не найден для удаления: {actual_file_path}"
-                except OSError as delete_error:
-                    logger.error(f"Ошибка удаления файла {actual_file_path}: {delete_error}")
-                    result["file_deleted"] = False
-                    result["delete_error"] = str(delete_error)
-            
+        except FileNotFoundError:
+            result = {
+                "status": "error",
+                "message": f"Файл не найден по пути: {file_path}",
+                "suggestion": "Убедитесь, что файл существует и путь к нему доступен из контейнера mcp-rag-service. Возможно, требуется настроить volume mapping (-v /host/path:/container/path)."
+            }
         except Exception as e:
             logger.error(f"Ошибка загрузки файла {file_path}: {e}")
             result = {
                 "status": "error",
-                "message": f"Ошибка загрузки файла: {str(e)}",
-                "suggestion": "Убедитесь что файл существует и доступен из Docker контейнера. Используйте volume mapping: -v '/host/path:/data'"
+                "message": f"Ошибка загрузки файла: {str(e)}"
             }
         
         return [TextContent(
@@ -445,6 +420,9 @@ class RAGMCPServer:
     async def _handle_similar_documents(self, args: Dict[str, Any]) -> List[TextContent]:
         """Обработка поиска похожих документов"""
         reference_file = args.get("reference_file")
+        if not reference_file:
+            raise ValueError("reference_file не может быть пустым")
+        
         top_k = args.get("top_k", 5)
         db_path = args.get("db_path", "/data/rag.duckdb")
         
@@ -475,6 +453,9 @@ class RAGMCPServer:
     async def _handle_query_direct(self, args: Dict[str, Any]) -> List[TextContent]:
         """Обработка прямого SQL запроса"""
         sql_query = args.get("sql_query")
+        if not sql_query:
+            raise ValueError("sql_query не может быть пустым")
+        
         db_path = args.get("db_path", "/data/rag.duckdb")
         
         if not safe_sql_query(sql_query):

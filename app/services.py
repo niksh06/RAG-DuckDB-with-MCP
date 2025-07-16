@@ -488,6 +488,68 @@ def search_chunks(query: str, top_k: int = 5, search_type: str = 'hybrid',
 
     return final_results
 
+def process_single_file(filepath: str, use_tfidf_keywords: bool = False) -> List[Dict[str, Any]]:
+    """
+    Processes a single file from its path, generates embeddings, and stores it in DuckDB.
+    This is an atomic version for single uploads.
+    """
+    if model is None or db_connection is None:
+        initialize_services()
+
+    file_name = os.path.basename(filepath)
+    logger.info(f"Processing single file: {file_name}")
+
+    try:
+        text = extract_text_from_file(filepath)
+        if not text or not text.strip():
+            logger.warning(f"No text extracted from {file_name} or file is empty. Skipping.")
+            return []
+
+        chunks_with_meta = get_chunks_for_file(filepath, text)
+        if not chunks_with_meta:
+            logger.warning(f"No chunks created for {file_name}. Skipping.")
+            return []
+
+        # Note: TF-IDF is corpus-based. For a single file, this is just term frequency.
+        # It's disabled by default for this function.
+        if use_tfidf_keywords:
+            try:
+                vectorizer = TfidfVectorizer(stop_words='english', max_features=10, ngram_range=(1, 2))
+                vectorizer.fit([text])
+                keywords = vectorizer.get_feature_names_out().tolist()
+                for chunk in chunks_with_meta:
+                    chunk['metadata']['keywords'] = keywords
+            except Exception as e:
+                logger.warning(f"Could not generate keywords for single file {file_name}: {e}")
+
+        logger.info(f"Generated {len(chunks_with_meta)} chunks for {file_name}.")
+
+        chunk_contents = [c['text'] for c in chunks_with_meta]
+        embeddings = model.encode(chunk_contents, show_progress_bar=False)
+        
+        max_id_result = db_connection.execute("SELECT MAX(id) FROM chunks").fetchone()
+        current_max_id = max_id_result[0] if max_id_result and max_id_result[0] is not None else 0
+
+        processed_chunks_json = []
+        for i, (chunk_data, embedding) in enumerate(zip(chunks_with_meta, embeddings)):
+            chunk_id = current_max_id + i + 1
+            embedding_float = embedding.astype('float32').tolist()
+            metadata_json = json.dumps(chunk_data['metadata'])
+
+            db_connection.execute(
+                "INSERT INTO chunks (id, file_name, chunk_index, content, metadata, embedding) VALUES (?, ?, ?, ?, ?, ?)",
+                (chunk_id, file_name, i, chunk_data['text'], metadata_json, embedding_float)
+            )
+            
+            processed_chunks_json.append(chunk_data)
+        
+        logger.info(f"Successfully inserted {len(chunks_with_meta)} chunks for {file_name} into DuckDB.")
+        return processed_chunks_json
+
+    except Exception as e:
+        logger.error(f"Failed to process single file {filepath}: {e}", exc_info=True)
+        raise
+
 # --- Main Processing Logic ---
 def process_and_embed_files(use_tfidf_keywords: bool = True, top_n_keywords: int = 5) -> List[Dict[str, Any]]:
     """
